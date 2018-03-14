@@ -20,7 +20,7 @@ import (
 )
 
 type user struct {
-	Id    int
+	ID    int
 	Tag   string `valid:"Maxx(aa)"`
 	Name  string `valid:"Required;"`
 	Age   int    `valid:"Required;Range(1, 140)"`
@@ -33,7 +33,7 @@ func TestGetValidFuncs(t *testing.T) {
 	var vfs []ValidFunc
 	var err error
 
-	f, _ := tf.FieldByName("Id")
+	f, _ := tf.FieldByName("ID")
 	if vfs, err = getValidFuncs(f); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestGetValidFuncs(t *testing.T) {
 	}
 
 	f, _ = tf.FieldByName("Tag")
-	if vfs, err = getValidFuncs(f); err.Error() != "doesn't exsits Maxx valid function" {
+	if _, err = getValidFuncs(f); err.Error() != "doesn't exsits Maxx valid function" {
 		t.Fatal(err)
 	}
 

@@ -25,11 +25,12 @@ type colValue struct {
 
 type operator int
 
+// define Col operations
 const (
-	Col_Add operator = iota
-	Col_Minus
-	Col_Multiply
-	Col_Except
+	ColAdd operator = iota
+	ColMinus
+	ColMultiply
+	ColExcept
 )
 
 // ColValue do the field raw changes. e.g Nums = Nums + 10. usage:
@@ -38,7 +39,7 @@ const (
 // 	}
 func ColValue(opt operator, value interface{}) interface{} {
 	switch opt {
-	case Col_Add, Col_Minus, Col_Multiply, Col_Except:
+	case ColAdd, ColMinus, ColMultiply, ColExcept:
 	default:
 		panic(fmt.Errorf("orm.ColValue wrong operator"))
 	}
@@ -60,7 +61,9 @@ type querySet struct {
 	relDepth int
 	limit    int64
 	offset   int64
+	groups   []string
 	orders   []string
+	distinct bool
 	orm      *orm
 }
 
@@ -105,6 +108,12 @@ func (o querySet) Offset(offset interface{}) QuerySeter {
 	return &o
 }
 
+// add GROUP expression
+func (o querySet) GroupBy(exprs ...string) QuerySeter {
+	o.groups = exprs
+	return &o
+}
+
 // add ORDER expression.
 // "column" means ASC, "-column" means DESC.
 func (o querySet) OrderBy(exprs ...string) QuerySeter {
@@ -112,30 +121,41 @@ func (o querySet) OrderBy(exprs ...string) QuerySeter {
 	return &o
 }
 
+// add DISTINCT to SELECT
+func (o querySet) Distinct() QuerySeter {
+	o.distinct = true
+	return &o
+}
+
 // set relation model to query together.
 // it will query relation models and assign to parent model.
 func (o querySet) RelatedSel(params ...interface{}) QuerySeter {
-    if len(params) == 0 {
-        o.relDepth = DefaultRelsDepth
-    } else {
-        for _, p := range params {
-            switch val := p.(type) {
-            case string:
-                o.related = append(o.related, val)
-            case int:
-                o.relDepth = val
-            default:
-                panic(fmt.Errorf("<QuerySeter.RelatedSel> wrong param kind: %v", val))
-            }
-        }
-    }
-    return &o
+	if len(params) == 0 {
+		o.relDepth = DefaultRelsDepth
+	} else {
+		for _, p := range params {
+			switch val := p.(type) {
+			case string:
+				o.related = append(o.related, val)
+			case int:
+				o.relDepth = val
+			default:
+				panic(fmt.Errorf("<QuerySeter.RelatedSel> wrong param kind: %v", val))
+			}
+		}
+	}
+	return &o
 }
 
 // set condition to QuerySeter.
 func (o querySet) SetCond(cond *Condition) QuerySeter {
 	o.cond = cond
 	return &o
+}
+
+// get condition from QuerySeter
+func (o querySet) GetCond() *Condition {
+	return o.cond
 }
 
 // return QuerySeter execution result number
@@ -177,15 +197,17 @@ func (o *querySet) All(container interface{}, cols ...string) (int64, error) {
 // query one row data and map to containers.
 // cols means the columns when querying.
 func (o *querySet) One(container interface{}, cols ...string) error {
+	o.limit = 1
 	num, err := o.orm.alias.DbBaser.ReadBatch(o.orm.db, o, o.mi, o.cond, container, o.orm.alias.TZ, cols)
 	if err != nil {
 		return err
 	}
-	if num > 1 {
-		return ErrMultiRows
-	}
 	if num == 0 {
 		return ErrNoRows
+	}
+
+	if num > 1 {
+		return ErrMultiRows
 	}
 	return nil
 }

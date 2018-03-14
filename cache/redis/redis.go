@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// package redis for cache provider
+// Package redis for cache provider
 //
 // depend on github.com/garyburd/redigo/redis
 //
@@ -32,6 +32,7 @@ package redis
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -41,12 +42,12 @@ import (
 )
 
 var (
-	// the collection name of redis for cache adapter.
-	DefaultKey string = "beecacheRedis"
+	// DefaultKey the collection name of redis for cache adapter.
+	DefaultKey = "beecacheRedis"
 )
 
-// Redis cache adapter.
-type RedisCache struct {
+// Cache is Redis cache adapter.
+type Cache struct {
 	p        *redis.Pool // redis connection pool
 	conninfo string
 	dbNum    int
@@ -54,21 +55,30 @@ type RedisCache struct {
 	password string
 }
 
-// create new redis cache with default collection name.
-func NewRedisCache() *RedisCache {
-	return &RedisCache{key: DefaultKey}
+// NewRedisCache create new redis cache with default collection name.
+func NewRedisCache() cache.Cache {
+	return &Cache{key: DefaultKey}
 }
 
-// actually do the redis cmds
-func (rc *RedisCache) do(commandName string, args ...interface{}) (reply interface{}, err error) {
+// actually do the redis cmds, args[0] must be the key name.
+func (rc *Cache) do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	if len(args) < 1 {
+		return nil, errors.New("missing required arguments")
+	}
+	args[0] = rc.associate(args[0])
 	c := rc.p.Get()
 	defer c.Close()
 
 	return c.Do(commandName, args...)
 }
 
+// associate with config key.
+func (rc *Cache) associate(originKey interface{}) string {
+	return fmt.Sprintf("%s:%s", rc.key, originKey)
+}
+
 // Get cache from redis.
-func (rc *RedisCache) Get(key string) interface{} {
+func (rc *Cache) Get(key string) interface{} {
 	if v, err := rc.do("GET", key); err == nil {
 		return v
 	}
@@ -76,107 +86,74 @@ func (rc *RedisCache) Get(key string) interface{} {
 }
 
 // GetMulti get cache from redis.
-func (rc *RedisCache) GetMulti(keys []string) []interface{} {
-	size := len(keys)
-	var rv []interface{}
+func (rc *Cache) GetMulti(keys []string) []interface{} {
 	c := rc.p.Get()
 	defer c.Close()
-	var err error
+	var args []interface{}
 	for _, key := range keys {
-		err = c.Send("GET", key)
-		if err != nil {
-			goto ERROR
-		}
+		args = append(args, rc.associate(key))
 	}
-	if err = c.Flush(); err != nil {
-		goto ERROR
+	values, err := redis.Values(c.Do("MGET", args...))
+	if err != nil {
+		return nil
 	}
-	for i := 0; i < size; i++ {
-		if v, err := c.Receive(); err == nil {
-			rv = append(rv, v.([]byte))
-		} else {
-			rv = append(rv, err)
-		}
-	}
-	return rv
-ERROR:
-	rv = rv[0:0]
-	for i := 0; i < size; i++ {
-		rv = append(rv, nil)
-	}
-
-	return rv
+	return values
 }
 
-// put cache to redis.
-func (rc *RedisCache) Put(key string, val interface{}, timeout int64) error {
-	var err error
-	if _, err = rc.do("SETEX", key, timeout, val); err != nil {
-		return err
-	}
-
-	if _, err = rc.do("HSET", rc.key, key, true); err != nil {
-		return err
-	}
+// Put put cache to redis.
+func (rc *Cache) Put(key string, val interface{}, timeout time.Duration) error {
+	_, err := rc.do("SETEX", key, int64(timeout/time.Second), val)
 	return err
 }
 
-// delete cache in redis.
-func (rc *RedisCache) Delete(key string) error {
-	var err error
-	if _, err = rc.do("DEL", key); err != nil {
-		return err
-	}
-	_, err = rc.do("HDEL", rc.key, key)
+// Delete delete cache in redis.
+func (rc *Cache) Delete(key string) error {
+	_, err := rc.do("DEL", key)
 	return err
 }
 
-// check cache's existence in redis.
-func (rc *RedisCache) IsExist(key string) bool {
+// IsExist check cache's existence in redis.
+func (rc *Cache) IsExist(key string) bool {
 	v, err := redis.Bool(rc.do("EXISTS", key))
 	if err != nil {
 		return false
 	}
-	if v == false {
-		if _, err = rc.do("HDEL", rc.key, key); err != nil {
-			return false
-		}
-	}
 	return v
 }
 
-// increase counter in redis.
-func (rc *RedisCache) Incr(key string) error {
+// Incr increase counter in redis.
+func (rc *Cache) Incr(key string) error {
 	_, err := redis.Bool(rc.do("INCRBY", key, 1))
 	return err
 }
 
-// decrease counter in redis.
-func (rc *RedisCache) Decr(key string) error {
+// Decr decrease counter in redis.
+func (rc *Cache) Decr(key string) error {
 	_, err := redis.Bool(rc.do("INCRBY", key, -1))
 	return err
 }
 
-// clean all cache in redis. delete this redis collection.
-func (rc *RedisCache) ClearAll() error {
-	cachedKeys, err := redis.Strings(rc.do("HKEYS", rc.key))
+// ClearAll clean all cache in redis. delete this redis collection.
+func (rc *Cache) ClearAll() error {
+	c := rc.p.Get()
+	defer c.Close()
+	cachedKeys, err := redis.Strings(c.Do("KEYS", rc.key+":*"))
 	if err != nil {
 		return err
 	}
 	for _, str := range cachedKeys {
-		if _, err = rc.do("DEL", str); err != nil {
+		if _, err = c.Do("DEL", str); err != nil {
 			return err
 		}
 	}
-	_, err = rc.do("DEL", rc.key)
 	return err
 }
 
-// start redis cache adapter.
+// StartAndGC start redis cache adapter.
 // config is like {"key":"collection key","conn":"connection info","dbNum":"0"}
 // the cache item in redis are stored forever,
 // so no gc operation.
-func (rc *RedisCache) StartAndGC(config string) error {
+func (rc *Cache) StartAndGC(config string) error {
 	var cf map[string]string
 	json.Unmarshal([]byte(config), &cf)
 
@@ -206,7 +183,7 @@ func (rc *RedisCache) StartAndGC(config string) error {
 }
 
 // connect to redis.
-func (rc *RedisCache) connectInit() {
+func (rc *Cache) connectInit() {
 	dialFunc := func() (c redis.Conn, err error) {
 		c, err = redis.Dial("tcp", rc.conninfo)
 		if err != nil {
@@ -236,5 +213,5 @@ func (rc *RedisCache) connectInit() {
 }
 
 func init() {
-	cache.Register("redis", NewRedisCache())
+	cache.Register("redis", NewRedisCache)
 }

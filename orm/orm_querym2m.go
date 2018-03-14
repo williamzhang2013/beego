@@ -14,9 +14,7 @@
 
 package orm
 
-import (
-	"reflect"
-)
+import "reflect"
 
 // model to model struct
 type queryM2M struct {
@@ -44,7 +42,21 @@ func (o *queryM2M) Add(mds ...interface{}) (int64, error) {
 	dbase := orm.alias.DbBaser
 
 	var models []interface{}
+	var otherValues []interface{}
+	var otherNames []string
 
+	for _, colname := range mi.fields.dbcols {
+		if colname != mfi.column && colname != rfi.column && colname != fi.mi.fields.pk.column &&
+			mi.fields.columns[colname] != mi.fields.pk {
+			otherNames = append(otherNames, colname)
+		}
+	}
+	for i, md := range mds {
+		if reflect.Indirect(reflect.ValueOf(md)).Kind() != reflect.Struct && i > 0 {
+			otherValues = append(otherValues, md)
+			mds = append(mds[:i], mds[i+1:]...)
+		}
+	}
 	for _, md := range mds {
 		val := reflect.ValueOf(md)
 		if val.Kind() == reflect.Slice || val.Kind() == reflect.Array {
@@ -60,32 +72,30 @@ func (o *queryM2M) Add(mds ...interface{}) (int64, error) {
 	}
 
 	_, v1, exist := getExistPk(o.mi, o.ind)
-	if exist == false {
+	if !exist {
 		panic(ErrMissPK)
 	}
 
 	names := []string{mfi.column, rfi.column}
 
 	values := make([]interface{}, 0, len(models)*2)
-
 	for _, md := range models {
 
 		ind := reflect.Indirect(reflect.ValueOf(md))
-
 		var v2 interface{}
 		if ind.Kind() != reflect.Struct {
 			v2 = ind.Interface()
 		} else {
 			_, v2, exist = getExistPk(fi.relModelInfo, ind)
-			if exist == false {
+			if !exist {
 				panic(ErrMissPK)
 			}
 		}
-
 		values = append(values, v1, v2)
 
 	}
-
+	names = append(names, otherNames...)
+	values = append(values, otherValues...)
 	return dbase.InsertValue(orm.db, mi, true, names, values)
 }
 
@@ -94,11 +104,7 @@ func (o *queryM2M) Remove(mds ...interface{}) (int64, error) {
 	fi := o.fi
 	qs := o.qs.Filter(fi.reverseFieldInfo.name, o.md)
 
-	nums, err := qs.Filter(fi.reverseFieldInfoTwo.name+ExprSep+"in", mds).Delete()
-	if err != nil {
-		return nums, err
-	}
-	return nums, nil
+	return qs.Filter(fi.reverseFieldInfoTwo.name+ExprSep+"in", mds).Delete()
 }
 
 // check model is existed in relationship of origin model

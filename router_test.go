@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/astaxie/beego/context"
+	"github.com/astaxie/beego/logs"
 )
 
 type TestController struct {
@@ -45,24 +46,29 @@ func (tc *TestController) List() {
 }
 
 func (tc *TestController) Params() {
-	tc.Ctx.Output.Body([]byte(tc.Ctx.Input.Params["0"] + tc.Ctx.Input.Params["1"] + tc.Ctx.Input.Params["2"]))
+	tc.Ctx.Output.Body([]byte(tc.Ctx.Input.Param("0") + tc.Ctx.Input.Param("1") + tc.Ctx.Input.Param("2")))
 }
 
 func (tc *TestController) Myext() {
 	tc.Ctx.Output.Body([]byte(tc.Ctx.Input.Param(":ext")))
 }
 
-func (tc *TestController) GetUrl() {
-	tc.Ctx.Output.Body([]byte(tc.UrlFor(".Myext")))
+func (tc *TestController) GetURL() {
+	tc.Ctx.Output.Body([]byte(tc.URLFor(".Myext")))
 }
 
-func (t *TestController) GetParams() {
-	t.Ctx.WriteString(t.Ctx.Input.Query(":last") + "+" +
-		t.Ctx.Input.Query(":first") + "+" + t.Ctx.Input.Query("learn"))
+func (tc *TestController) GetParams() {
+	tc.Ctx.WriteString(tc.Ctx.Input.Query(":last") + "+" +
+		tc.Ctx.Input.Query(":first") + "+" + tc.Ctx.Input.Query("learn"))
 }
 
-func (t *TestController) GetManyRouter() {
-	t.Ctx.WriteString(t.Ctx.Input.Query(":id") + t.Ctx.Input.Query(":page"))
+func (tc *TestController) GetManyRouter() {
+	tc.Ctx.WriteString(tc.Ctx.Input.Query(":id") + tc.Ctx.Input.Query(":page"))
+}
+
+func (tc *TestController) GetEmptyBody() {
+	var res []byte
+	tc.Ctx.Output.Body(res)
 }
 
 type ResStatus struct {
@@ -70,29 +76,29 @@ type ResStatus struct {
 	Msg  string
 }
 
-type JsonController struct {
+type JSONController struct {
 	Controller
 }
 
-func (this *JsonController) Prepare() {
-	this.Data["json"] = "prepare"
-	this.ServeJson(true)
+func (jc *JSONController) Prepare() {
+	jc.Data["json"] = "prepare"
+	jc.ServeJSON(true)
 }
 
-func (this *JsonController) Get() {
-	this.Data["Username"] = "astaxie"
-	this.Ctx.Output.Body([]byte("ok"))
+func (jc *JSONController) Get() {
+	jc.Data["Username"] = "astaxie"
+	jc.Ctx.Output.Body([]byte("ok"))
 }
 
 func TestUrlFor(t *testing.T) {
 	handler := NewControllerRegister()
 	handler.Add("/api/list", &TestController{}, "*:List")
 	handler.Add("/person/:last/:first", &TestController{}, "*:Param")
-	if a := handler.UrlFor("TestController.List"); a != "/api/list" {
-		Info(a)
+	if a := handler.URLFor("TestController.List"); a != "/api/list" {
+		logs.Info(a)
 		t.Errorf("TestController.List must equal to /api/list")
 	}
-	if a := handler.UrlFor("TestController.Param", ":last", "xie", ":first", "asta"); a != "/person/xie/asta" {
+	if a := handler.URLFor("TestController.Param", ":last", "xie", ":first", "asta"); a != "/person/xie/asta" {
 		t.Errorf("TestController.Param must equal to /person/xie/asta, but get " + a)
 	}
 }
@@ -100,39 +106,39 @@ func TestUrlFor(t *testing.T) {
 func TestUrlFor3(t *testing.T) {
 	handler := NewControllerRegister()
 	handler.AddAuto(&TestController{})
-	if a := handler.UrlFor("TestController.Myext"); a != "/test/myext" && a != "/Test/Myext" {
+	if a := handler.URLFor("TestController.Myext"); a != "/test/myext" && a != "/Test/Myext" {
 		t.Errorf("TestController.Myext must equal to /test/myext, but get " + a)
 	}
-	if a := handler.UrlFor("TestController.GetUrl"); a != "/test/geturl" && a != "/Test/GetUrl" {
-		t.Errorf("TestController.GetUrl must equal to /test/geturl, but get " + a)
+	if a := handler.URLFor("TestController.GetURL"); a != "/test/geturl" && a != "/Test/GetURL" {
+		t.Errorf("TestController.GetURL must equal to /test/geturl, but get " + a)
 	}
 }
 
 func TestUrlFor2(t *testing.T) {
 	handler := NewControllerRegister()
 	handler.Add("/v1/:v/cms_:id(.+)_:page(.+).html", &TestController{}, "*:List")
-	handler.Add("/v1/:username/edit", &TestController{}, "get:GetUrl")
+	handler.Add("/v1/:username/edit", &TestController{}, "get:GetURL")
 	handler.Add("/v1/:v(.+)_cms/ttt_:id(.+)_:page(.+).html", &TestController{}, "*:Param")
 	handler.Add("/:year:int/:month:int/:title/:entid", &TestController{})
-	if handler.UrlFor("TestController.GetUrl", ":username", "astaxie") != "/v1/astaxie/edit" {
-		Info(handler.UrlFor("TestController.GetUrl"))
+	if handler.URLFor("TestController.GetURL", ":username", "astaxie") != "/v1/astaxie/edit" {
+		logs.Info(handler.URLFor("TestController.GetURL"))
 		t.Errorf("TestController.List must equal to /v1/astaxie/edit")
 	}
 
-	if handler.UrlFor("TestController.List", ":v", "za", ":id", "12", ":page", "123") !=
+	if handler.URLFor("TestController.List", ":v", "za", ":id", "12", ":page", "123") !=
 		"/v1/za/cms_12_123.html" {
-		Info(handler.UrlFor("TestController.List"))
+		logs.Info(handler.URLFor("TestController.List"))
 		t.Errorf("TestController.List must equal to /v1/za/cms_12_123.html")
 	}
-	if handler.UrlFor("TestController.Param", ":v", "za", ":id", "12", ":page", "123") !=
+	if handler.URLFor("TestController.Param", ":v", "za", ":id", "12", ":page", "123") !=
 		"/v1/za_cms/ttt_12_123.html" {
-		Info(handler.UrlFor("TestController.Param"))
+		logs.Info(handler.URLFor("TestController.Param"))
 		t.Errorf("TestController.List must equal to /v1/za_cms/ttt_12_123.html")
 	}
-	if handler.UrlFor("TestController.Get", ":year", "1111", ":month", "11",
+	if handler.URLFor("TestController.Get", ":year", "1111", ":month", "11",
 		":title", "aaaa", ":entid", "aaaa") !=
 		"/1111/11/aaaa/aaaa" {
-		Info(handler.UrlFor("TestController.Get"))
+		logs.Info(handler.URLFor("TestController.Get"))
 		t.Errorf("TestController.Get must equal to /1111/11/aaaa/aaaa")
 	}
 }
@@ -239,6 +245,21 @@ func TestManyRoute(t *testing.T) {
 	}
 }
 
+// Test for issue #1669
+func TestEmptyResponse(t *testing.T) {
+
+	r, _ := http.NewRequest("GET", "/beego-empty.html", nil)
+	w := httptest.NewRecorder()
+
+	handler := NewControllerRegister()
+	handler.Add("/beego-empty.html", &TestController{}, "get:GetEmptyBody")
+	handler.ServeHTTP(w, r)
+
+	if body := w.Body.String(); body != "" {
+		t.Error("want empty body")
+	}
+}
+
 func TestNotFound(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
@@ -270,7 +291,7 @@ func TestPrepare(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.Add("/json/list", &JsonController{})
+	handler.Add("/json/list", &JSONController{})
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != `"prepare"` {
 		t.Errorf(w.Body.String() + "user define func can't run")
@@ -333,6 +354,18 @@ func TestRouterHandler(t *testing.T) {
 	}
 }
 
+func TestRouterHandlerAll(t *testing.T) {
+	r, _ := http.NewRequest("POST", "/sayhi/a/b/c", nil)
+	w := httptest.NewRecorder()
+
+	handler := NewControllerRegister()
+	handler.Handler("/sayhi", http.HandlerFunc(sayhello), true)
+	handler.ServeHTTP(w, r)
+	if w.Body.String() != "sayhello" {
+		t.Errorf("TestRouterHandler can't run")
+	}
+}
+
 //
 // Benchmarks NewApp:
 //
@@ -387,6 +420,74 @@ func testRequest(method, path string) (*httptest.ResponseRecorder, *http.Request
 	return recorder, request
 }
 
+// Expectation: A Filter with the correct configuration should be created given
+// specific parameters.
+func TestInsertFilter(t *testing.T) {
+	testName := "TestInsertFilter"
+
+	mux := NewControllerRegister()
+	mux.InsertFilter("*", BeforeRouter, func(*context.Context) {})
+	if !mux.filters[BeforeRouter][0].returnOnOutput {
+		t.Errorf(
+			"%s: passing no variadic params should set returnOnOutput to true",
+			testName)
+	}
+	if mux.filters[BeforeRouter][0].resetParams {
+		t.Errorf(
+			"%s: passing no variadic params should set resetParams to false",
+			testName)
+	}
+
+	mux = NewControllerRegister()
+	mux.InsertFilter("*", BeforeRouter, func(*context.Context) {}, false)
+	if mux.filters[BeforeRouter][0].returnOnOutput {
+		t.Errorf(
+			"%s: passing false as 1st variadic param should set returnOnOutput to false",
+			testName)
+	}
+
+	mux = NewControllerRegister()
+	mux.InsertFilter("*", BeforeRouter, func(*context.Context) {}, true, true)
+	if !mux.filters[BeforeRouter][0].resetParams {
+		t.Errorf(
+			"%s: passing true as 2nd variadic param should set resetParams to true",
+			testName)
+	}
+}
+
+// Expectation: the second variadic arg should cause the execution of the filter
+// to preserve the parameters from before its execution.
+func TestParamResetFilter(t *testing.T) {
+	testName := "TestParamResetFilter"
+	route := "/beego/*" // splat
+	path := "/beego/routes/routes"
+
+	mux := NewControllerRegister()
+
+	mux.InsertFilter("*", BeforeExec, beegoResetParams, true, true)
+
+	mux.Get(route, beegoHandleResetParams)
+
+	rw, r := testRequest("GET", path)
+	mux.ServeHTTP(rw, r)
+
+	// The two functions, `beegoResetParams` and `beegoHandleResetParams` add
+	// a response header of `Splat`.  The expectation here is that that Header
+	// value should match what the _request's_ router set, not the filter's.
+
+	headers := rw.HeaderMap
+	if len(headers["Splat"]) != 1 {
+		t.Errorf(
+			"%s: There was an error in the test. Splat param not set in Header",
+			testName)
+	}
+	if headers["Splat"][0] != "routes/routes" {
+		t.Errorf(
+			"%s: expected `:splat` param to be [routes/routes] but it was [%s]",
+			testName, headers["Splat"][0])
+	}
+}
+
 // Execution point: BeforeRouter
 // expectation: only BeforeRouter function is executed, notmatch output as router doesn't handle
 func TestFilterBeforeRouter(t *testing.T) {
@@ -401,10 +502,10 @@ func TestFilterBeforeRouter(t *testing.T) {
 	rw, r := testRequest("GET", url)
 	mux.ServeHTTP(rw, r)
 
-	if strings.Contains(rw.Body.String(), "BeforeRouter1") == false {
+	if !strings.Contains(rw.Body.String(), "BeforeRouter1") {
 		t.Errorf(testName + " BeforeRouter did not run")
 	}
-	if strings.Contains(rw.Body.String(), "hello") == true {
+	if strings.Contains(rw.Body.String(), "hello") {
 		t.Errorf(testName + " BeforeRouter did not return properly")
 	}
 }
@@ -424,13 +525,13 @@ func TestFilterBeforeExec(t *testing.T) {
 	rw, r := testRequest("GET", url)
 	mux.ServeHTTP(rw, r)
 
-	if strings.Contains(rw.Body.String(), "BeforeExec1") == false {
+	if !strings.Contains(rw.Body.String(), "BeforeExec1") {
 		t.Errorf(testName + " BeforeExec did not run")
 	}
-	if strings.Contains(rw.Body.String(), "hello") == true {
+	if strings.Contains(rw.Body.String(), "hello") {
 		t.Errorf(testName + " BeforeExec did not return properly")
 	}
-	if strings.Contains(rw.Body.String(), "BeforeRouter") == true {
+	if strings.Contains(rw.Body.String(), "BeforeRouter") {
 		t.Errorf(testName + " BeforeRouter ran in error")
 	}
 }
@@ -451,16 +552,16 @@ func TestFilterAfterExec(t *testing.T) {
 	rw, r := testRequest("GET", url)
 	mux.ServeHTTP(rw, r)
 
-	if strings.Contains(rw.Body.String(), "AfterExec1") == false {
+	if !strings.Contains(rw.Body.String(), "AfterExec1") {
 		t.Errorf(testName + " AfterExec did not run")
 	}
-	if strings.Contains(rw.Body.String(), "hello") == false {
+	if !strings.Contains(rw.Body.String(), "hello") {
 		t.Errorf(testName + " handler did not run properly")
 	}
-	if strings.Contains(rw.Body.String(), "BeforeRouter") == true {
+	if strings.Contains(rw.Body.String(), "BeforeRouter") {
 		t.Errorf(testName + " BeforeRouter ran in error")
 	}
-	if strings.Contains(rw.Body.String(), "BeforeExec") == true {
+	if strings.Contains(rw.Body.String(), "BeforeExec") {
 		t.Errorf(testName + " BeforeExec ran in error")
 	}
 }
@@ -482,19 +583,19 @@ func TestFilterFinishRouter(t *testing.T) {
 	rw, r := testRequest("GET", url)
 	mux.ServeHTTP(rw, r)
 
-	if strings.Contains(rw.Body.String(), "FinishRouter1") == true {
+	if strings.Contains(rw.Body.String(), "FinishRouter1") {
 		t.Errorf(testName + " FinishRouter did not run")
 	}
-	if strings.Contains(rw.Body.String(), "hello") == false {
+	if !strings.Contains(rw.Body.String(), "hello") {
 		t.Errorf(testName + " handler did not run properly")
 	}
-	if strings.Contains(rw.Body.String(), "AfterExec1") == true {
+	if strings.Contains(rw.Body.String(), "AfterExec1") {
 		t.Errorf(testName + " AfterExec ran in error")
 	}
-	if strings.Contains(rw.Body.String(), "BeforeRouter") == true {
+	if strings.Contains(rw.Body.String(), "BeforeRouter") {
 		t.Errorf(testName + " BeforeRouter ran in error")
 	}
-	if strings.Contains(rw.Body.String(), "BeforeExec") == true {
+	if strings.Contains(rw.Body.String(), "BeforeExec") {
 		t.Errorf(testName + " BeforeExec ran in error")
 	}
 }
@@ -514,14 +615,14 @@ func TestFilterFinishRouterMultiFirstOnly(t *testing.T) {
 	rw, r := testRequest("GET", url)
 	mux.ServeHTTP(rw, r)
 
-	if strings.Contains(rw.Body.String(), "FinishRouter1") == false {
+	if !strings.Contains(rw.Body.String(), "FinishRouter1") {
 		t.Errorf(testName + " FinishRouter1 did not run")
 	}
-	if strings.Contains(rw.Body.String(), "hello") == false {
+	if !strings.Contains(rw.Body.String(), "hello") {
 		t.Errorf(testName + " handler did not run properly")
 	}
 	// not expected in body
-	if strings.Contains(rw.Body.String(), "FinishRouter2") == true {
+	if strings.Contains(rw.Body.String(), "FinishRouter2") {
 		t.Errorf(testName + " FinishRouter2 did run")
 	}
 }
@@ -541,41 +642,56 @@ func TestFilterFinishRouterMulti(t *testing.T) {
 	rw, r := testRequest("GET", url)
 	mux.ServeHTTP(rw, r)
 
-	if strings.Contains(rw.Body.String(), "FinishRouter1") == false {
+	if !strings.Contains(rw.Body.String(), "FinishRouter1") {
 		t.Errorf(testName + " FinishRouter1 did not run")
 	}
-	if strings.Contains(rw.Body.String(), "hello") == false {
+	if !strings.Contains(rw.Body.String(), "hello") {
 		t.Errorf(testName + " handler did not run properly")
 	}
-	if strings.Contains(rw.Body.String(), "FinishRouter2") == false {
+	if !strings.Contains(rw.Body.String(), "FinishRouter2") {
 		t.Errorf(testName + " FinishRouter2 did not run properly")
 	}
 }
 
 func beegoFilterNoOutput(ctx *context.Context) {
-	return
 }
+
 func beegoBeforeRouter1(ctx *context.Context) {
 	ctx.WriteString("|BeforeRouter1")
 }
+
 func beegoBeforeRouter2(ctx *context.Context) {
 	ctx.WriteString("|BeforeRouter2")
 }
+
 func beegoBeforeExec1(ctx *context.Context) {
 	ctx.WriteString("|BeforeExec1")
 }
+
 func beegoBeforeExec2(ctx *context.Context) {
 	ctx.WriteString("|BeforeExec2")
 }
+
 func beegoAfterExec1(ctx *context.Context) {
 	ctx.WriteString("|AfterExec1")
 }
+
 func beegoAfterExec2(ctx *context.Context) {
 	ctx.WriteString("|AfterExec2")
 }
+
 func beegoFinishRouter1(ctx *context.Context) {
 	ctx.WriteString("|FinishRouter1")
 }
+
 func beegoFinishRouter2(ctx *context.Context) {
 	ctx.WriteString("|FinishRouter2")
+}
+
+func beegoResetParams(ctx *context.Context) {
+	ctx.ResponseWriter.Header().Set("splat", ctx.Input.Param(":splat"))
+}
+
+func beegoHandleResetParams(ctx *context.Context) {
+	ctx.ResponseWriter.Header().Set("splat", ctx.Input.Param(":splat"))
 }

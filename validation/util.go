@@ -23,7 +23,10 @@ import (
 )
 
 const (
-	VALIDTAG = "valid"
+	// ValidTag struct tag
+	ValidTag = "valid"
+
+	wordsize = 32 << (^uint(0) >> 32 & 1)
 )
 
 var (
@@ -42,6 +45,8 @@ var (
 		"Valid":     true,
 		"NoMatch":   true,
 	}
+	// ErrInt64On32 show 32 bit platform not support int64
+	ErrInt64On32 = fmt.Errorf("not support int64 on 32-bit platform")
 )
 
 func init() {
@@ -55,16 +60,38 @@ func init() {
 	}
 }
 
-// Valid function type
+// CustomFunc is for custom validate function
+type CustomFunc func(v *Validation, obj interface{}, key string)
+
+// AddCustomFunc Add a custom function to validation
+// The name can not be:
+//   Clear
+//   HasErrors
+//   ErrorMap
+//   Error
+//   Check
+//   Valid
+//   NoMatch
+// If the name is same with exists function, it will replace the origin valid function
+func AddCustomFunc(name string, f CustomFunc) error {
+	if unFuncs[name] {
+		return fmt.Errorf("invalid function name: %s", name)
+	}
+
+	funcs[name] = reflect.ValueOf(f)
+	return nil
+}
+
+// ValidFunc Valid function type
 type ValidFunc struct {
 	Name   string
 	Params []interface{}
 }
 
-// Validate function map
+// Funcs Validate function map
 type Funcs map[string]reflect.Value
 
-// validate values with named type string
+// Call validate values with named type string
 func (f Funcs) Call(name string, params ...interface{}) (result []reflect.Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -96,12 +123,11 @@ func isStructPtr(t reflect.Type) bool {
 }
 
 func getValidFuncs(f reflect.StructField) (vfs []ValidFunc, err error) {
-	tag := f.Tag.Get(VALIDTAG)
+	tag := f.Tag.Get(ValidTag)
 	if len(tag) == 0 {
 		return
 	}
 	if vfs, tag, err = getRegFuncs(tag, f.Name); err != nil {
-		fmt.Printf("%+v\n", err)
 		return
 	}
 	fs := strings.Split(tag, ";")
@@ -213,7 +239,7 @@ func trim(name, key string, s []string) (ts []interface{}, err error) {
 	for i := 0; i < len(s); i++ {
 		var param interface{}
 		// skip *Validation and obj params
-		if param, err = magic(fn.Type().In(i+2), strings.TrimSpace(s[i])); err != nil {
+		if param, err = parseParam(fn.Type().In(i+2), strings.TrimSpace(s[i])); err != nil {
 			return
 		}
 		ts[i] = param
@@ -223,20 +249,43 @@ func trim(name, key string, s []string) (ts []interface{}, err error) {
 }
 
 // modify the parameters's type to adapt the function input parameters' type
-func magic(t reflect.Type, s string) (i interface{}, err error) {
+func parseParam(t reflect.Type, s string) (i interface{}, err error) {
 	switch t.Kind() {
 	case reflect.Int:
 		i, err = strconv.Atoi(s)
+	case reflect.Int64:
+		if wordsize == 32 {
+			return nil, ErrInt64On32
+		}
+		i, err = strconv.ParseInt(s, 10, 64)
+	case reflect.Int32:
+		var v int64
+		v, err = strconv.ParseInt(s, 10, 32)
+		if err == nil {
+			i = int32(v)
+		}
+	case reflect.Int16:
+		var v int64
+		v, err = strconv.ParseInt(s, 10, 16)
+		if err == nil {
+			i = int16(v)
+		}
+	case reflect.Int8:
+		var v int64
+		v, err = strconv.ParseInt(s, 10, 8)
+		if err == nil {
+			i = int8(v)
+		}
 	case reflect.String:
 		i = s
 	case reflect.Ptr:
 		if t.Elem().String() != "regexp.Regexp" {
-			err = fmt.Errorf("does not support %s", t.Elem().String())
+			err = fmt.Errorf("not support %s", t.Elem().String())
 			return
 		}
 		i, err = regexp.Compile(s)
 	default:
-		err = fmt.Errorf("does not support %s", t.Kind().String())
+		err = fmt.Errorf("not support %s", t.Kind().String())
 	}
 	return
 }

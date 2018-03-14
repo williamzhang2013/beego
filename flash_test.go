@@ -30,7 +30,7 @@ func (t *TestFlashController) TestWriteFlash() {
 	flash.Notice("TestFlashString")
 	flash.Store(&t.Controller)
 	// we choose to serve json because we don't want to load a template html file
-	t.ServeJson(true)
+	t.ServeJSON(true)
 }
 
 func TestFlashHeader(t *testing.T) {
@@ -48,7 +48,7 @@ func TestFlashHeader(t *testing.T) {
 	// match for the expected header
 	res := strings.Contains(sc, "BEEGO_FLASH=%00notice%23BEEGOFLASH%23TestFlashString%00")
 	// validate the assertion
-	if res != true {
+	if !res {
 		t.Errorf("TestFlashHeader() unable to validate flash message")
 	}
 }

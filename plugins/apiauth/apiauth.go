@@ -33,15 +33,15 @@
 //		// maybe store in configure, maybe in database
 //	}
 //
-//	beego.InsertFilter("*", beego.BeforeRouter,apiauth.APIAuthWithFunc(getAppSecret, 360))
+//	beego.InsertFilter("*", beego.BeforeRouter,apiauth.APISecretAuth(getAppSecret, 360))
 //
-// Infomation:
+// Information:
 //
 // In the request user should include these params in the query
 //
 // 1. appid
 //
-//		 appid is asigned to the application
+//		 appid is assigned to the application
 //
 // 2. signature
 //
@@ -56,6 +56,7 @@
 package apiauth
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -68,8 +69,10 @@ import (
 	"github.com/astaxie/beego/context"
 )
 
-type AppIdToAppSecret func(string) string
+// AppIDToAppSecret is used to get appsecret throw appid
+type AppIDToAppSecret func(string) string
 
+// APIBaiscAuth use the basic appid/appkey as the AppIdToAppSecret
 func APIBaiscAuth(appid, appkey string) beego.FilterFunc {
 	ft := func(aid string) string {
 		if aid == appid {
@@ -77,100 +80,81 @@ func APIBaiscAuth(appid, appkey string) beego.FilterFunc {
 		}
 		return ""
 	}
-	return APIAuthWithFunc(ft, 300)
+	return APISecretAuth(ft, 300)
 }
 
-func APIAuthWithFunc(f AppIdToAppSecret, timeout int) beego.FilterFunc {
+// APISecretAuth use AppIdToAppSecret verify and
+func APISecretAuth(f AppIDToAppSecret, timeout int) beego.FilterFunc {
 	return func(ctx *context.Context) {
 		if ctx.Input.Query("appid") == "" {
-			ctx.Output.SetStatus(403)
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("miss query param: appid")
 			return
 		}
 		appsecret := f(ctx.Input.Query("appid"))
 		if appsecret == "" {
-			ctx.Output.SetStatus(403)
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("not exist this appid")
 			return
 		}
 		if ctx.Input.Query("signature") == "" {
-			ctx.Output.SetStatus(403)
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("miss query param: signature")
 			return
 		}
 		if ctx.Input.Query("timestamp") == "" {
-			ctx.Output.SetStatus(403)
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("miss query param: timestamp")
 			return
 		}
 		u, err := time.Parse("2006-01-02 15:04:05", ctx.Input.Query("timestamp"))
 		if err != nil {
-			ctx.Output.SetStatus(403)
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("timestamp format is error, should 2006-01-02 15:04:05")
 			return
 		}
 		t := time.Now()
 		if t.Sub(u).Seconds() > float64(timeout) {
-			ctx.Output.SetStatus(403)
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("timeout! the request time is long ago, please try again")
 			return
 		}
 		if ctx.Input.Query("signature") !=
-			Signature(appsecret, ctx.Input.Method(), ctx.Request.Form, ctx.Input.Uri()) {
-			ctx.Output.SetStatus(403)
+			Signature(appsecret, ctx.Input.Method(), ctx.Request.Form, ctx.Input.URL()) {
+			ctx.ResponseWriter.WriteHeader(403)
 			ctx.WriteString("auth failed")
 		}
 	}
 }
 
-func Signature(appsecret, method string, params url.Values, RequestURI string) (result string) {
-	var query string
+// Signature used to generate signature with the appsecret/method/params/RequestURI
+func Signature(appsecret, method string, params url.Values, RequestURL string) (result string) {
+	var b bytes.Buffer
+	keys := make([]string, len(params))
 	pa := make(map[string]string)
 	for k, v := range params {
 		pa[k] = v[0]
+		keys = append(keys, k)
 	}
-	vs := mapSorter(pa)
-	vs.Sort()
-	for i := 0; i < vs.Len(); i++ {
-		if vs.Keys[i] == "signature" {
+
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		if key == "signature" {
 			continue
 		}
-		if vs.Keys[i] != "" && vs.Vals[i] != "" {
-			query = fmt.Sprintf("%v%v%v", query, vs.Keys[i], vs.Vals[i])
+
+		val := pa[key]
+		if key != "" && val != "" {
+			b.WriteString(key)
+			b.WriteString(val)
 		}
 	}
-	string_to_sign := fmt.Sprintf("%v\n%v\n%v\n", method, query, RequestURI)
+
+	stringToSign := fmt.Sprintf("%v\n%v\n%v\n", method, b.String(), RequestURL)
 
 	sha256 := sha256.New
 	hash := hmac.New(sha256, []byte(appsecret))
-	hash.Write([]byte(string_to_sign))
+	hash.Write([]byte(stringToSign))
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
-}
-
-type valSorter struct {
-	Keys []string
-	Vals []string
-}
-
-func mapSorter(m map[string]string) *valSorter {
-	vs := &valSorter{
-		Keys: make([]string, 0, len(m)),
-		Vals: make([]string, 0, len(m)),
-	}
-	for k, v := range m {
-		vs.Keys = append(vs.Keys, k)
-		vs.Vals = append(vs.Vals, v)
-	}
-	return vs
-}
-
-func (vs *valSorter) Sort() {
-	sort.Sort(vs)
-}
-
-func (vs *valSorter) Len() int           { return len(vs.Keys) }
-func (vs *valSorter) Less(i, j int) bool { return vs.Keys[i] < vs.Keys[j] }
-func (vs *valSorter) Swap(i, j int) {
-	vs.Vals[i], vs.Vals[j] = vs.Vals[j], vs.Vals[i]
-	vs.Keys[i], vs.Keys[j] = vs.Keys[j], vs.Keys[i]
 }

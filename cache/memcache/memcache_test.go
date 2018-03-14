@@ -17,34 +17,36 @@ package memcache
 import (
 	_ "github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/astaxie/beego/cache"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/astaxie/beego/cache"
 )
 
-func TestRedisCache(t *testing.T) {
+func TestMemcacheCache(t *testing.T) {
 	bm, err := cache.NewCache("memcache", `{"conn": "127.0.0.1:11211"}`)
 	if err != nil {
 		t.Error("init err")
 	}
-	if err = bm.Put("astaxie", "1", 10); err != nil {
+	timeoutDuration := 10 * time.Second
+	if err = bm.Put("astaxie", "1", timeoutDuration); err != nil {
 		t.Error("set Error", err)
 	}
 	if !bm.IsExist("astaxie") {
 		t.Error("check err")
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(11 * time.Second)
 
 	if bm.IsExist("astaxie") {
 		t.Error("check err")
 	}
-	if err = bm.Put("astaxie", "1", 10); err != nil {
+	if err = bm.Put("astaxie", "1", timeoutDuration); err != nil {
 		t.Error("set Error", err)
 	}
 
-	if v, err := strconv.Atoi(bm.Get("astaxie").(string)); err != nil || v != 1 {
+	if v, err := strconv.Atoi(string(bm.Get("astaxie").([]byte))); err != nil || v != 1 {
 		t.Error("get err")
 	}
 
@@ -52,7 +54,7 @@ func TestRedisCache(t *testing.T) {
 		t.Error("Incr Error", err)
 	}
 
-	if v, err := strconv.Atoi(bm.Get("astaxie").(string)); err != nil || v != 2 {
+	if v, err := strconv.Atoi(string(bm.Get("astaxie").([]byte))); err != nil || v != 2 {
 		t.Error("get err")
 	}
 
@@ -60,7 +62,7 @@ func TestRedisCache(t *testing.T) {
 		t.Error("Decr Error", err)
 	}
 
-	if v, err := strconv.Atoi(bm.Get("astaxie").(string)); err != nil || v != 1 {
+	if v, err := strconv.Atoi(string(bm.Get("astaxie").([]byte))); err != nil || v != 1 {
 		t.Error("get err")
 	}
 	bm.Delete("astaxie")
@@ -69,19 +71,19 @@ func TestRedisCache(t *testing.T) {
 	}
 
 	//test string
-	if err = bm.Put("astaxie", "author", 10); err != nil {
+	if err = bm.Put("astaxie", "author", timeoutDuration); err != nil {
 		t.Error("set Error", err)
 	}
 	if !bm.IsExist("astaxie") {
 		t.Error("check err")
 	}
 
-	if v := bm.Get("astaxie").(string); v != "author" {
+	if v := bm.Get("astaxie").([]byte); string(v) != "author" {
 		t.Error("get err")
 	}
 
 	//test GetMulti
-	if err = bm.Put("astaxie1", "author1", 10); err != nil {
+	if err = bm.Put("astaxie1", "author1", timeoutDuration); err != nil {
 		t.Error("set Error", err)
 	}
 	if !bm.IsExist("astaxie1") {
@@ -92,10 +94,10 @@ func TestRedisCache(t *testing.T) {
 	if len(vv) != 2 {
 		t.Error("GetMulti ERROR")
 	}
-	if vv[0].(string) != "author" {
+	if string(vv[0].([]byte)) != "author" && string(vv[0].([]byte)) != "author1" {
 		t.Error("GetMulti ERROR")
 	}
-	if vv[1].(string) != "author1" {
+	if string(vv[1].([]byte)) != "author1" && string(vv[1].([]byte)) != "author" {
 		t.Error("GetMulti ERROR")
 	}
 
